@@ -2,93 +2,104 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from pydantic import BaseModel
+from typing import List
+from starlette.middleware.cors import CORSMiddleware
 
-import requests
+from db import session
+from model import UserTable, User
 
-app = FastAPI()
-
-db = []
-
-class City(BaseModel):
-    name: str
-    timezone: str
+import json
 
 templates = Jinja2Templates(directory="templates")
 
-## ------------------------------------------------------------------------------------
-## Models
-## ------------------------------------------------------------------------------------
+app = FastAPI()
 
-class City(BaseModel):
-    name: str
-    timezone: str
-
-class CityModify(BaseModel):
-    id: int
-    name: str
-    timezone: str
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "/users 에서 사용자관리"}
 
 
-@app.get('/cities', response_class=HTMLResponse)
-def get_cities(request: Request):
+# ----------API 정의------------
+@app.get("/users", response_class=HTMLResponse)
+async def read_users(request: Request):
+    print("read_users >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     context = {}
 
-    rsCity = []
-
-    cnt = 0
-    for city in db:
-        str = f"http://worldtimeapi.org/api/timezone/{city['timezone']}"
-        #print(str)
-        r = requests.get(str)
-        cur_time = r.json()['datetime']
-
-        cnt += 1
-
-        rsCity.append({'id': cnt, 'name':city['name'], 'timezone':city['timezone'], 'current_time': cur_time})
-
-    #print(rsCity)
+    users = session.query(UserTable).all()
 
     context['request'] = request
-    context['rsCity'] = rsCity
+    context['users'] = users
 
-    return templates.TemplateResponse("city_list.html", context)
-
-
-@app.get('/cities/{city_id}', response_class=HTMLResponse)
-def get_city(request: Request, city_id: int):
-    city = db[city_id-1]
-    r = requests.get(f"http://worldtimeapi.org/api/timezone/{city['timezone']}")
-    cur_time = r.json()['datetime']
-
-    # return {'name':city['name'], 'timezone':city['timezone'], 'current_time': cur_time}
-    context = {'request':request, 'name':city['name'], 'timezone':city['timezone'], 'current_time': cur_time}
-    return templates.TemplateResponse("city_detail.html", context)
+    return templates.TemplateResponse("user_list.html", context)
 
 
-@app.post('/cities')
-def create_city(city: City):
+@app.get("/users/{user_id}", response_class=HTMLResponse)
+async def read_user(request: Request, user_id: int):
+    print("read_user >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    context = {}
 
-    db.append(city.dict())
+    user = session.query(UserTable).filter(UserTable.id == user_id).first()
+    print(user.name)
+    context['name'] = user.name
+    context['age'] = user.age
+    context['request'] = request
 
-    return db[-1]
-
-
-@app.put('/cities')
-def modify_city(city: CityModify):
-
-    db[city.id-1] = { 'name': city.name, 'timezone': city.timezone }
-
-    return db[city.id-1]
+    return templates.TemplateResponse("user_detail.html", context)
 
 
-@app.delete('/cities/{city_id}')
-def delete_city(city_id: int):
-    db.pop(city_id-1)
+@app.post("/users")
+async def create_user(users: User):
+    print("create_user >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    # data = await request.json()
 
-    return {'result_msg':'Deleted...'}
+    userlist = list(users)
+    uname = userlist[1][1]
+    uage = userlist[2][1]
+
+    user = UserTable()
+    user.name = uname
+    user.age = uage
+
+    session.add(user)
+    session.commit()
+
+    return { 'result_msg': f'{uname} Registered...' }
+
+
+@app.put("/users")
+async def modify_users(users: User):
+    print("modify_user >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+
+    userlist = list(users)
+    uid = userlist[0][1]
+    uname = userlist[1][1]
+    uage = userlist[2][1]
+
+    user = session.query(UserTable).filter(UserTable.id == uid).first()
+    user.name = uname
+    user.age = uage
+    session.commit()
+
+    return { 'result_msg': f"{uname} updated..." }
+
+
+@app.delete("/users")
+async def delete_users(users: User):
+    print("delete_user >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+
+    userlist = list(users)
+    uid = userlist[0][1]
+
+    user = session.query(UserTable).filter(UserTable.id == uid).delete()
+    session.commit()
+
+    return {'result_msg': f"User deleted..."}
